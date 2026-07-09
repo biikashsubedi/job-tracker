@@ -38,7 +38,7 @@ export type WorkMode = (typeof WORK_MODES)[number];
 export const PLATFORMS = [
   "LinkedIn",
   "Company Site",
-  "JobStreet",
+  "Seneca Works",
   "Indeed",
   "Kalibrr",
   "Referral",
