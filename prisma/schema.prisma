@@ -1,0 +1,50 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model Application {
+  id             String    @id @default(cuid())
+  position       String
+  company        String
+  roleType       String    // Full-time | Part-time | Contract | Freelance | Internship
+  status         String    // see STATUSES in src/lib/constants.ts
+  workMode       String    // Remote | Hybrid | On-site | N/A
+  techStack      String?   // comma-separated, e.g. "Python, TensorFlow, SQL"
+  skillMatch     Int?      // 0–100
+  interviewRound String?   // None | Round 1 | Round 2 | Round 3 | Final Round | Offer Stage
+  salaryMin      Int?
+  salaryMax      Int?
+  dateApplied    DateTime?
+  platform       String    // LinkedIn | Company Site | JobStreet | Indeed | Kalibrr | Referral | HR Portal | Other
+  deadline       DateTime?
+  notes          String?
+  jobUrl         String?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+  documents      Document[]
+  statusHistory  StatusEvent[]
+}
+
+model Document {
+  id            String      @id @default(cuid())
+  filename      String
+  storedPath    String
+  kind          String      // Resume | Cover Letter | Job Description | Other
+  uploadedAt    DateTime    @default(now())
+  application   Application @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+  applicationId String
+}
+
+model StatusEvent {
+  id            String      @id @default(cuid())
+  fromStatus    String?
+  toStatus      String
+  changedAt     DateTime    @default(now())
+  application   Application @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+  applicationId String
+}

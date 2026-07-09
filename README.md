@@ -1,36 +1,121 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# JobTrack
 
-## Getting Started
+A job-application tracker built to replace an Excel spreadsheet. Track applications
+through an 18-stage pipeline, drag them across a Kanban board, watch live analytics,
+attach documents, and import/export CSV — all computed from a local database.
 
-First, run the development server:
+Built with **Next.js 14 (App Router)**, **TypeScript**, **Tailwind CSS**,
+**Prisma**, **Recharts**, and **@dnd-kit**.
+
+## Features
+
+- **Applications table** — search (debounced), filter by status / platform / work
+  mode / role type, sort, removable filter chips, and a slide-in detail drawer.
+- **Kanban board** (`/board`) — five pipeline columns (Applied · Interviewing ·
+  Assessment · Offer · Closed). Drag a card to a column and pick the exact status;
+  changes persist and record a status-history event. Tap a card's ⇄ button on mobile.
+- **Dashboard** (`/dashboard`) — stat cards and live charts (status breakdown,
+  platform donut, work-mode / role-type, applications-over-time, upcoming deadlines).
+- **Documents** — upload PDF / DOCX / TXT (max 10 MB) per application, download, delete.
+- **CSV import/export** — import from your existing spreadsheet (headers are
+  auto-matched, rows are validated and previewed); export everything back to CSV.
+- **Dark mode** (persisted), consistent status/platform/work-mode color coding
+  everywhere, and full responsive layout down to mobile.
+
+### Keyboard shortcuts
+
+| Key | Action |
+| --- | --- |
+| `n` | Open the Add Application modal |
+| `/` | Focus the search box |
+
+## Getting started
+
+Requires **Node.js 18.17+**.
 
 ```bash
+# 1. Install dependencies
+npm install
+
+# 2. Create the environment file
+echo 'DATABASE_URL="file:./dev.db"' > .env
+
+# 3. Create the database, run migrations, and generate the Prisma client
+npx prisma migrate dev
+
+# 4. (Optional) Seed 5 sample applications
+npm run db:seed
+
+# 5. Start the dev server
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Open <http://localhost:3000>.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+### Useful scripts
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+| Script | What it does |
+| --- | --- |
+| `npm run dev` | Start the dev server |
+| `npm run build` / `npm start` | Production build / serve |
+| `npm run lint` | ESLint |
+| `npm run db:seed` | Reset and reseed sample data |
+| `npx prisma studio` | Browse the database in a GUI |
 
-## Learn More
+## Project structure
 
-To learn more about Next.js, take a look at the following resources:
+```
+prisma/
+  schema.prisma        # Application, Document, StatusEvent models
+  seed.ts              # sample data
+src/
+  app/
+    api/               # route handlers (applications, documents, import, export)
+    board/  dashboard/ # pages
+    layout.tsx page.tsx
+  components/          # UI (applications, board, dashboard, ui primitives)
+  lib/
+    db.ts              # Prisma client singleton
+    constants.ts       # dropdown values + color families (single source of truth)
+    validation.ts      # Zod schemas shared by client and server
+    csv.ts  dashboard.ts  status-groups.ts  format.ts
+uploads/               # uploaded documents (gitignored)
+```
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+Uploaded files are stored on local disk under `uploads/{applicationId}/`. For a
+real deployment you'd swap this for object storage (S3/R2); the database only keeps
+the metadata and relative path.
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+## Switching from SQLite to PostgreSQL
 
-## Deploy on Vercel
+The schema uses only portable column types, so moving to Postgres is a config change:
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+1. **Point the datasource at Postgres** in `prisma/schema.prisma`:
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+   ```prisma
+   datasource db {
+     provider = "postgresql"   // was "sqlite"
+     url      = env("DATABASE_URL")
+   }
+   ```
+
+2. **Update the connection string** in `.env`:
+
+   ```bash
+   DATABASE_URL="postgresql://user:password@localhost:5432/jobtrack?schema=public"
+   ```
+
+3. **Regenerate migrations.** The existing migration SQL is SQLite-specific, so
+   remove it and create a fresh Postgres migration:
+
+   ```bash
+   rm -rf prisma/migrations
+   npx prisma migrate dev --name init
+   ```
+
+   (No new dependencies needed — the Prisma client supports Postgres natively.)
+
+4. **Reseed if desired:** `npm run db:seed`.
+
+Nothing in the application code references SQLite directly — all database access
+goes through Prisma via `src/lib/db.ts`, so no code changes are required.
