@@ -39,3 +39,19 @@ next-env.d.ts
 
 # uploaded documents
 /uploads
+
+# database (SQLite dev db + write-ahead/journal sidecars — contains user data & password hashes)
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+/prisma/*.db
+/prisma/*.db-journal
+/prisma/*.db-wal
+/prisma/*.db-shm
+
+# secrets / keys
+*.key
+*.p12
+*.pfx
+secrets.json
