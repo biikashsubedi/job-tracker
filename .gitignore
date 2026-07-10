@@ -58,3 +58,6 @@ secrets.json
 
 node_module
 
+.next
+.claude
+
