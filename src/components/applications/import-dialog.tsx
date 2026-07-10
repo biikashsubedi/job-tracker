@@ -13,6 +13,7 @@ import {
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { parseCsvFile, type ImportRow } from "@/lib/csv";
+import { useLookups } from "@/components/lookups/lookup-provider";
 import { cn } from "@/lib/utils";
 
 type Parsed = { rows: ImportRow[]; missing: string[] };
@@ -38,6 +39,7 @@ export function ImportDialog({
   onOpenChange: (open: boolean) => void;
   onImported: () => void;
 }) {
+  const { options } = useLookups();
   const [parsed, setParsed] = useState<Parsed | null>(null);
   const [dragOver, setDragOver] = useState(false);
   const [parsing, setParsing] = useState(false);
@@ -59,7 +61,13 @@ export function ImportDialog({
     }
     setParsing(true);
     try {
-      const result = await parseCsvFile(file);
+      const result = await parseCsvFile(file, {
+        status: options.STATUS.map((o) => o.label),
+        roleType: options.ROLE_TYPE.map((o) => o.label),
+        workMode: options.WORK_MODE.map((o) => o.label),
+        platform: options.PLATFORM.map((o) => o.label),
+        interviewRound: options.INTERVIEW_ROUND.map((o) => o.label),
+      });
       if (result.rows.length === 0) {
         toast.error("That CSV has no data rows");
         setParsing(false);

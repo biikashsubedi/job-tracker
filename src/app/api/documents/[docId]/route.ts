@@ -13,7 +13,14 @@ export async function DELETE(_req: NextRequest, { params }: RouteContext) {
     });
     if (!document) return jsonError("Document not found", 404);
 
-    await db.document.delete({ where: { id: params.docId } });
+    await db.$transaction([
+      db.document.delete({ where: { id: params.docId } }),
+      // Bump the application so "Last update" reflects document activity.
+      db.application.update({
+        where: { id: document.applicationId },
+        data: { updatedAt: new Date() },
+      }),
+    ]);
 
     try {
       await unlink(path.resolve(process.cwd(), document.storedPath));

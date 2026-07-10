@@ -1,24 +1,5 @@
-import {
-  STATUSES,
-  PLATFORMS,
-  WORK_MODES,
-  ROLE_TYPES,
-  STATUS_COLORS,
-  PLATFORM_COLORS,
-  WORK_MODE_COLORS,
-  type Status,
-} from "./constants";
-import { STATUS_GROUPS, groupForStatus } from "./status-groups";
+import type { StatusGroup } from "./status-groups";
 import type { ApplicationRow } from "./types";
-
-// Terminal = the Closed group plus accepted/hired outcomes — nothing left to do.
-const CLOSED_STATUSES =
-  STATUS_GROUPS.find((g) => g.key === "closed")?.statuses ?? [];
-const TERMINAL_STATUSES = new Set<string>([
-  ...CLOSED_STATUSES,
-  "Offer Accepted / Hired",
-  "Hired",
-]);
 
 export interface DashboardStats {
   total: number;
@@ -29,20 +10,32 @@ export interface DashboardStats {
   responseRate: number;
 }
 
-export function computeStats(apps: ApplicationRow[]): DashboardStats {
+export function computeStats(
+  apps: ApplicationRow[],
+  groups: StatusGroup[]
+): DashboardStats {
   const total = apps.length;
-  const inGroup = (key: string) =>
-    apps.filter((a) => groupForStatus(a.status).key === key).length;
+  const closed = groups.find((g) => g.label === "Closed")?.statuses ?? [];
+  // Terminal = Closed group plus accepted/hired outcomes — nothing left to do.
+  const terminal = new Set<string>([
+    ...closed,
+    "Offer Accepted / Hired",
+    "Hired",
+  ]);
+  const groupLabelOf = (status: string) =>
+    groups.find((g) => g.statuses.includes(status))?.label;
+  const inGroup = (label: string) =>
+    apps.filter((a) => groupLabelOf(a.status) === label).length;
   // "Responded" = progressed past Applied; Ghosted means no response ever came.
   const responded = apps.filter(
     (a) => a.status !== "Applied" && a.status !== "Ghosted"
   ).length;
   return {
     total,
-    active: apps.filter((a) => !TERMINAL_STATUSES.has(a.status)).length,
-    interviewing: inGroup("interviewing"),
-    offers: inGroup("offer"),
-    closed: inGroup("closed"),
+    active: apps.filter((a) => !terminal.has(a.status)).length,
+    interviewing: inGroup("Interviewing"),
+    offers: inGroup("Offer"),
+    closed: inGroup("Closed"),
     responseRate: total === 0 ? 0 : Math.round((responded / total) * 100),
   };
 }
@@ -54,11 +47,19 @@ export interface ChartSlice {
   pct: number;
 }
 
-function toShares(
-  counts: Map<string, number>,
-  total: number,
-  hexFor: (name: string) => string
+/** hexFor maps an option label to its chart color. */
+function shares(
+  apps: ApplicationRow[],
+  labels: string[],
+  valueOf: (app: ApplicationRow) => string,
+  hexFor: (label: string) => string
 ): ChartSlice[] {
+  const counts = new Map<string, number>(labels.map((l) => [l, 0]));
+  for (const app of apps) {
+    const key = valueOf(app);
+    counts.set(key, (counts.get(key) ?? 0) + 1);
+  }
+  const total = apps.length;
   return Array.from(counts.entries())
     .filter(([, value]) => value > 0)
     .map(([name, value]) => ({
@@ -69,54 +70,39 @@ function toShares(
     }));
 }
 
-export function statusBreakdown(apps: ApplicationRow[]): ChartSlice[] {
-  const counts = new Map<string, number>(STATUSES.map((s) => [s, 0]));
-  for (const app of apps) {
-    counts.set(app.status, (counts.get(app.status) ?? 0) + 1);
-  }
-  return toShares(
-    counts,
-    apps.length,
-    (s) => STATUS_COLORS[s as Status]?.hex ?? "#9ca3af"
-  );
+export function statusBreakdown(
+  apps: ApplicationRow[],
+  labels: string[],
+  hexFor: (label: string) => string
+): ChartSlice[] {
+  return shares(apps, labels, (a) => a.status, hexFor);
 }
 
-export function platformShare(apps: ApplicationRow[]): ChartSlice[] {
-  const counts = new Map<string, number>(PLATFORMS.map((p) => [p, 0]));
-  for (const app of apps) {
-    counts.set(app.platform, (counts.get(app.platform) ?? 0) + 1);
-  }
-  return toShares(
-    counts,
-    apps.length,
-    (p) => PLATFORM_COLORS[p as keyof typeof PLATFORM_COLORS]?.hex ?? "#9ca3af"
-  );
+export function platformShare(
+  apps: ApplicationRow[],
+  labels: string[],
+  hexFor: (label: string) => string
+): ChartSlice[] {
+  return shares(apps, labels, (a) => a.platform, hexFor);
 }
 
-export function workModeShare(apps: ApplicationRow[]): ChartSlice[] {
-  const counts = new Map<string, number>(WORK_MODES.map((w) => [w, 0]));
-  for (const app of apps) {
-    counts.set(app.workMode, (counts.get(app.workMode) ?? 0) + 1);
-  }
-  return toShares(
-    counts,
-    apps.length,
-    (w) => WORK_MODE_COLORS[w as keyof typeof WORK_MODE_COLORS]?.hex ?? "#9ca3af"
-  );
+export function workModeShare(
+  apps: ApplicationRow[],
+  labels: string[],
+  hexFor: (label: string) => string
+): ChartSlice[] {
+  return shares(apps, labels, (a) => a.workMode, hexFor);
 }
 
 const ROLE_TYPE_PALETTE = ["#4f46e5", "#6366f1", "#818cf8", "#a5b4fc", "#c7d2fe"];
 
-export function roleTypeShare(apps: ApplicationRow[]): ChartSlice[] {
-  const counts = new Map<string, number>(ROLE_TYPES.map((r) => [r, 0]));
-  for (const app of apps) {
-    counts.set(app.roleType, (counts.get(app.roleType) ?? 0) + 1);
-  }
-  return toShares(
-    counts,
-    apps.length,
-    (r) => ROLE_TYPE_PALETTE[ROLE_TYPES.indexOf(r as (typeof ROLE_TYPES)[number])] ?? "#c7d2fe"
-  );
+export function roleTypeShare(
+  apps: ApplicationRow[],
+  labels: string[]
+): ChartSlice[] {
+  const hexFor = (label: string) =>
+    ROLE_TYPE_PALETTE[labels.indexOf(label)] ?? "#c7d2fe";
+  return shares(apps, labels, (a) => a.roleType, hexFor);
 }
 
 export interface WeekPoint {

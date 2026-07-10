@@ -3,7 +3,7 @@
 import { useEffect } from "react";
 import type { ApplicationRow } from "@/lib/types";
 import type { StatusGroup } from "@/lib/status-groups";
-import { statusColor } from "../applications/badges";
+import { useLookups } from "@/components/lookups/lookup-provider";
 import { cn } from "@/lib/utils";
 
 export interface PickerState {
@@ -24,6 +24,7 @@ export function StatusPicker({
   onPick: (app: ApplicationRow, status: string) => void;
   onClose: () => void;
 }) {
+  const { colorFor } = useLookups();
   useEffect(() => {
     if (!picker) return;
     const onKey = (e: KeyboardEvent) => {
@@ -66,7 +67,7 @@ export function StatusPicker({
             <span
               className={cn(
                 "h-1.5 w-1.5 shrink-0 rounded-full",
-                statusColor(status).dot
+                colorFor("STATUS", status).dot
               )}
             />
             <span className="truncate">{status}</span>

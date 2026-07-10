@@ -10,17 +10,8 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import {
-  STATUSES,
-  PLATFORMS,
-  WORK_MODES,
-  ROLE_TYPES,
-  PLATFORM_COLORS,
-  WORK_MODE_COLORS,
-  type Platform,
-  type WorkMode,
-} from "@/lib/constants";
-import { statusColor } from "./badges";
+import { useLookups } from "@/components/lookups/lookup-provider";
+import type { LookupType } from "@/lib/lookup-colors";
 import { SEARCH_INPUT_ID } from "@/components/keyboard-shortcuts";
 import { cn } from "@/lib/utils";
 
@@ -46,33 +37,17 @@ export const SORT_OPTIONS = [
   { value: "skillMatch", label: "Skill Match" },
 ] as const;
 
-const FILTER_DEFS: {
+const FILTER_META: {
   key: keyof Filters;
   label: string;
   allLabel: string;
-  options: readonly string[];
+  type: LookupType;
 }[] = [
-  { key: "status", label: "Status", allLabel: "All statuses", options: STATUSES },
-  { key: "platform", label: "Platform", allLabel: "All platforms", options: PLATFORMS },
-  { key: "workMode", label: "Work Mode", allLabel: "All work modes", options: WORK_MODES },
-  { key: "roleType", label: "Role Type", allLabel: "All role types", options: ROLE_TYPES },
+  { key: "status", label: "Status", allLabel: "All statuses", type: "STATUS" },
+  { key: "platform", label: "Platform", allLabel: "All platforms", type: "PLATFORM" },
+  { key: "workMode", label: "Work Mode", allLabel: "All work modes", type: "WORK_MODE" },
+  { key: "roleType", label: "Role Type", allLabel: "All role types", type: "ROLE_TYPE" },
 ];
-
-function chipClasses(key: keyof Filters, value: string): string {
-  if (key === "status") {
-    const c = statusColor(value);
-    return cn(c.bg, c.text, c.border);
-  }
-  if (key === "platform") {
-    const c = PLATFORM_COLORS[value as Platform];
-    if (c) return cn(c.bg, c.text, "border-transparent");
-  }
-  if (key === "workMode") {
-    const c = WORK_MODE_COLORS[value as WorkMode];
-    if (c) return cn(c.bg, c.text, "border-transparent");
-  }
-  return "bg-secondary text-secondary-foreground border-transparent";
-}
 
 interface ToolbarProps {
   search: string;
@@ -95,7 +70,20 @@ export function Toolbar({
   sortDir,
   onSortDirChange,
 }: ToolbarProps) {
-  const activeFilters = FILTER_DEFS.filter(({ key }) => filters[key] !== "");
+  const { options, colorFor } = useLookups();
+  const activeFilters = FILTER_META.filter(({ key }) => filters[key] !== "");
+
+  function chipClasses(type: LookupType, value: string): string {
+    if (type === "STATUS") {
+      const c = colorFor("STATUS", value);
+      return cn(c.bg, c.text, c.border);
+    }
+    if (type === "PLATFORM" || type === "WORK_MODE") {
+      const c = colorFor(type, value);
+      return cn(c.badgeBg, c.badgeText, "border-transparent");
+    }
+    return "bg-secondary text-secondary-foreground border-transparent";
+  }
 
   return (
     <div className="space-y-2.5">
@@ -111,7 +99,7 @@ export function Toolbar({
           />
         </div>
 
-        {FILTER_DEFS.map(({ key, label, allLabel, options }) => (
+        {FILTER_META.map(({ key, label, allLabel, type }) => (
           <Select
             key={key}
             value={filters[key] || "all"}
@@ -131,20 +119,20 @@ export function Toolbar({
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="all">{allLabel}</SelectItem>
-              {options.map((option) => (
-                <SelectItem key={option} value={option}>
-                  {key === "status" ? (
+              {options[type].map((option) => (
+                <SelectItem key={option.label} value={option.label}>
+                  {type === "STATUS" ? (
                     <span className="flex items-center gap-2">
                       <span
                         className={cn(
                           "h-1.5 w-1.5 rounded-full",
-                          statusColor(option).dot
+                          colorFor("STATUS", option.label).dot
                         )}
                       />
-                      {option}
+                      {option.label}
                     </span>
                   ) : (
-                    option
+                    option.label
                   )}
                 </SelectItem>
               ))}
@@ -184,12 +172,12 @@ export function Toolbar({
 
       {activeFilters.length > 0 && (
         <div className="flex flex-wrap items-center gap-1.5">
-          {activeFilters.map(({ key, label }) => (
+          {activeFilters.map(({ key, label, type }) => (
             <span
               key={key}
               className={cn(
                 "inline-flex items-center gap-1 rounded-full border py-0.5 pl-2.5 pr-1 text-xs font-medium transition-colors",
-                chipClasses(key, filters[key])
+                chipClasses(type, filters[key])
               )}
             >
               <span className="opacity-60">{label}:</span> {filters[key]}

@@ -1,13 +1,15 @@
 import Papa from "papaparse";
-import {
-  STATUSES,
-  ROLE_TYPES,
-  WORK_MODES,
-  PLATFORMS,
-  INTERVIEW_ROUNDS,
-} from "./constants";
 import { formatDateForCsv } from "./format";
 import type { ApplicationPayload, ApplicationRow } from "./types";
+
+/** Valid option labels used to validate imported values. */
+export interface ImportOptions {
+  status: string[];
+  roleType: string[];
+  workMode: string[];
+  platform: string[];
+  interviewRound: string[];
+}
 
 type Field = keyof ApplicationPayload;
 
@@ -133,7 +135,8 @@ function parseSkill(v: string): {
 
 export function buildImportRows(
   records: Record<string, string>[],
-  fields: string[]
+  fields: string[],
+  valid: ImportOptions
 ): ImportRow[] {
   const map = resolveHeaderMap(fields);
   const get = (raw: Record<string, string>, field: Field) => {
@@ -168,16 +171,16 @@ export function buildImportRows(
       return matched;
     };
 
-    const status = enumField("status", STATUSES, "Applied");
-    const roleType = enumField("roleType", ROLE_TYPES, "Full-time");
-    const workMode = enumField("workMode", WORK_MODES, "N/A");
-    const platform = enumField("platform", PLATFORMS, "Other");
+    const status = enumField("status", valid.status, "Applied");
+    const roleType = enumField("roleType", valid.roleType, "Full-time");
+    const workMode = enumField("workMode", valid.workMode, "N/A");
+    const platform = enumField("platform", valid.platform, "Other");
 
     // interviewRound is nullable — empty → None, unknown → warn + None
     let interviewRound: string | null = "None";
     const rawRound = get(raw, "interviewRound");
     if (rawRound) {
-      const matched = matchEnum(rawRound, INTERVIEW_ROUNDS);
+      const matched = matchEnum(rawRound, valid.interviewRound);
       if (matched) interviewRound = matched;
       else {
         warnings.push(`Unknown interviewRound "${rawRound}" → None`);
@@ -240,7 +243,8 @@ export function buildImportRows(
 }
 
 export function parseCsvFile(
-  file: File
+  file: File,
+  valid: ImportOptions
 ): Promise<{ rows: ImportRow[]; fields: string[]; missing: string[] }> {
   return new Promise((resolve, reject) => {
     Papa.parse<Record<string, string>>(file, {
@@ -250,7 +254,7 @@ export function parseCsvFile(
       complete: (result) => {
         const fields = result.meta.fields ?? [];
         resolve({
-          rows: buildImportRows(result.data, fields),
+          rows: buildImportRows(result.data, fields, valid),
           fields,
           missing: missingRequiredColumns(fields),
         });

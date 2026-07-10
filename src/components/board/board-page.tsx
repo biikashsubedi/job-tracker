@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
 import {
   DndContext,
   DragOverlay,
@@ -14,7 +15,9 @@ import {
 import { toast } from "sonner";
 import { Skeleton } from "@/components/ui/skeleton";
 import type { ApplicationRow } from "@/lib/types";
-import { STATUS_GROUPS, groupForStatus } from "@/lib/status-groups";
+import { buildStatusGroups, groupForStatusLabel } from "@/lib/status-groups";
+import { useRevalidateOnFocus } from "@/lib/use-revalidate";
+import { useLookups } from "@/components/lookups/lookup-provider";
 import { BoardColumn } from "./board-column";
 import { BoardCardContent } from "./board-card";
 import { StatusPicker, type PickerState } from "./status-picker";
@@ -38,6 +41,13 @@ function dropPointFromEvent(event: DragEndEvent): { x: number; y: number } {
 }
 
 export function BoardPage() {
+  const router = useRouter();
+  const { options } = useLookups();
+  const groups = useMemo(
+    () => buildStatusGroups(options.STATUS),
+    [options]
+  );
+
   const [apps, setApps] = useState<ApplicationRow[] | null>(null);
   const [activeId, setActiveId] = useState<string | null>(null);
   const [picker, setPicker] = useState<PickerState | null>(null);
@@ -51,24 +61,32 @@ export function BoardPage() {
     })
   );
 
-  useEffect(() => {
-    fetch("/api/applications")
+  const loadApps = useCallback(() => {
+    fetch("/api/applications", { cache: "no-store" })
       .then((res) => (res.ok ? res.json() : Promise.reject()))
       .then(setApps)
       .catch(() => {
-        setApps([]);
+        setApps((prev) => prev ?? []);
         toast.error("Failed to load applications");
       });
   }, []);
 
+  useEffect(() => {
+    loadApps();
+  }, [loadApps]);
+
+  // Refresh when returning to the board (back-nav, tab refocus, cross-tab edits).
+  useRevalidateOnFocus(loadApps);
+
   const byGroup = useMemo(() => {
     const map = new Map<string, ApplicationRow[]>();
-    for (const group of STATUS_GROUPS) map.set(group.key, []);
+    for (const group of groups) map.set(group.key, []);
     for (const app of apps ?? []) {
-      map.get(groupForStatus(app.status).key)?.push(app);
+      const key = groupForStatusLabel(app.status, groups)?.key;
+      if (key) map.get(key)?.push(app);
     }
     return map;
-  }, [apps]);
+  }, [apps, groups]);
 
   const activeApp = useMemo(
     () => apps?.find((a) => a.id === activeId) ?? null,
@@ -99,8 +117,11 @@ export function BoardPage() {
         (prev) => prev?.map((a) => (a.id === updated.id ? updated : a)) ?? prev
       );
       toast.success(`${app.position} → ${status}`);
+      // Invalidate the Router Cache so the list & dashboard show the new
+      // status when the user navigates to them next.
+      router.refresh();
     },
-    [apps]
+    [apps, router]
   );
 
   function handleDragStart(event: DragStartEvent) {
@@ -113,9 +134,9 @@ export function BoardPage() {
     const { active, over } = event;
     if (!over) return;
     const app = apps?.find((a) => a.id === active.id);
-    const group = STATUS_GROUPS.find((g) => g.key === over.id);
+    const group = groups.find((g) => g.key === over.id);
     if (!app || !group) return;
-    if (groupForStatus(app.status).key === group.key) return;
+    if (groupForStatusLabel(app.status, groups)?.key === group.key) return;
 
     if (group.statuses.length === 1) {
       // only one possible status in this group — no need to ask
@@ -140,7 +161,7 @@ export function BoardPage() {
       <div className="min-h-0 flex-1">
         <div className="mx-auto flex h-full max-w-[1600px] items-stretch gap-3 overflow-x-auto px-4 pb-6 sm:gap-4 sm:px-6">
           {apps === null ? (
-            STATUS_GROUPS.map((group) => (
+            groups.map((group) => (
               <div
                 key={group.key}
                 className="flex w-[290px] shrink-0 flex-col overflow-hidden rounded-xl border bg-card shadow-sm"
@@ -162,7 +183,7 @@ export function BoardPage() {
               onDragEnd={handleDragEnd}
               onDragCancel={() => setActiveId(null)}
             >
-              {STATUS_GROUPS.map((group) => (
+              {groups.map((group) => (
                 <BoardColumn
                   key={group.key}
                   group={group}

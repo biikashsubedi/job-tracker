@@ -1,7 +1,8 @@
 "use client";
 
+import { useRouter } from "next/navigation";
 import { useDraggable } from "@dnd-kit/core";
-import { ArrowRightLeft, CalendarClock } from "lucide-react";
+import { ArrowRightLeft, CalendarClock, Eye } from "lucide-react";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -10,14 +11,19 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import {
+  canViewFiles,
+  filesHref,
+} from "@/components/viewer/view-files-button";
 import type { ApplicationRow } from "@/lib/types";
 import {
   daysSinceApplied,
   deadlineState,
   formatDateShort,
 } from "@/lib/format";
-import { STATUS_GROUPS } from "@/lib/status-groups";
-import { PlatformBadge, SkillMatchBar, statusColor } from "../applications/badges";
+import { buildStatusGroups } from "@/lib/status-groups";
+import { PlatformBadge, SkillMatchBar } from "../applications/badges";
+import { useLookups } from "@/components/lookups/lookup-provider";
 import { cn } from "@/lib/utils";
 
 function StatusMenu({
@@ -27,11 +33,15 @@ function StatusMenu({
   app: ApplicationRow;
   onChangeStatus: (app: ApplicationRow, status: string) => void;
 }) {
+  const router = useRouter();
+  const { options, colorFor } = useLookups();
+  const groups = buildStatusGroups(options.STATUS);
+  const viewable = canViewFiles(app);
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
         <button
-          aria-label={`Change status of ${app.position}`}
+          aria-label={`Actions for ${app.position}`}
           className="rounded-md p-1 text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
           // keep pointer events from starting a drag
           onPointerDown={(e) => e.stopPropagation()}
@@ -43,7 +53,16 @@ function StatusMenu({
         align="end"
         className="max-h-80 w-64 overflow-y-auto rounded-xl"
       >
-        {STATUS_GROUPS.map((group, i) => (
+        <DropdownMenuItem
+          disabled={!viewable}
+          onSelect={() => router.push(filesHref(app.id))}
+          className="gap-2"
+        >
+          <Eye className="h-3.5 w-3.5" />
+          {viewable ? "View Files" : "No documents uploaded"}
+        </DropdownMenuItem>
+        <DropdownMenuSeparator />
+        {groups.map((group, i) => (
           <div key={group.key}>
             {i > 0 && <DropdownMenuSeparator />}
             <DropdownMenuLabel className="text-xs text-muted-foreground">
@@ -59,7 +78,7 @@ function StatusMenu({
                 <span
                   className={cn(
                     "h-1.5 w-1.5 shrink-0 rounded-full",
-                    statusColor(status).dot
+                    colorFor("STATUS", status).dot
                   )}
                 />
                 {status}
@@ -86,10 +105,11 @@ export function BoardCardContent({
   onChangeStatus?: (app: ApplicationRow, status: string) => void;
   overlay?: boolean;
 }) {
+  const { colorFor } = useLookups();
   const dlState = deadlineState(app.deadline);
   const urgent = dlState === "soon" || dlState === "overdue";
   const since = daysSinceApplied(app.dateApplied);
-  const c = statusColor(app.status);
+  const c = colorFor("STATUS", app.status);
 
   return (
     <article

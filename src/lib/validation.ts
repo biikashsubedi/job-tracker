@@ -1,11 +1,14 @@
 import { z } from "zod";
-import {
-  STATUSES,
-  ROLE_TYPES,
-  WORK_MODES,
-  PLATFORMS,
-  INTERVIEW_ROUNDS,
-} from "./constants";
+
+// Valid option labels per lookup type. Passed in from the DB (server routes) or
+// the lookup context (client form) so validation stays in sync with /system.
+export interface LookupValues {
+  status: string[];
+  roleType: string[];
+  workMode: string[];
+  platform: string[];
+  interviewRound: string[];
+}
 
 const salaryRangeValid = (data: {
   salaryMin?: number | null;
@@ -20,35 +23,41 @@ const SALARY_RANGE_ERROR = {
   path: ["salaryMin"],
 };
 
-const applicationBase = z.object({
-  position: z.string().trim().min(1, "position is required"),
-  company: z.string().trim().min(1, "company is required"),
-  roleType: z.enum(ROLE_TYPES),
-  status: z.enum(STATUSES),
-  workMode: z.enum(WORK_MODES),
-  techStack: z.string().trim().nullish(),
-  skillMatch: z.number().int().min(0).max(100).nullish(),
-  interviewRound: z.enum(INTERVIEW_ROUNDS).nullish(),
-  salaryMin: z.number().int().nonnegative().nullish(),
-  salaryMax: z.number().int().nonnegative().nullish(),
-  dateApplied: z.coerce.date().nullish(),
-  platform: z.enum(PLATFORMS),
-  deadline: z.coerce.date().nullish(),
-  notes: z.string().nullish(),
-  jobUrl: z.string().url("jobUrl must be a valid URL").nullish(),
-});
+function oneOf(values: string[], field: string) {
+  const set = new Set(values);
+  return z.string().refine((v) => set.has(v), `${field} must be a valid option`);
+}
 
-export const applicationCreateSchema = applicationBase
-  .strict()
-  .refine(salaryRangeValid, SALARY_RANGE_ERROR);
+export function buildApplicationSchemas(v: LookupValues) {
+  const base = z.object({
+    position: z.string().trim().min(1, "position is required"),
+    company: z.string().trim().min(1, "company is required"),
+    roleType: oneOf(v.roleType, "roleType"),
+    status: oneOf(v.status, "status"),
+    workMode: oneOf(v.workMode, "workMode"),
+    techStack: z.string().trim().nullish(),
+    skillMatch: z.number().int().min(0).max(100).nullish(),
+    interviewRound: oneOf(v.interviewRound, "interviewRound").nullish(),
+    salaryMin: z.number().int().nonnegative().nullish(),
+    salaryMax: z.number().int().nonnegative().nullish(),
+    dateApplied: z.coerce.date().nullish(),
+    platform: oneOf(v.platform, "platform"),
+    deadline: z.coerce.date().nullish(),
+    notes: z.string().nullish(),
+    jobUrl: z.string().url("jobUrl must be a valid URL").nullish(),
+  });
 
-export const applicationUpdateSchema = applicationBase
-  .partial()
-  .strict()
-  .refine((data) => Object.keys(data).length > 0, {
-    message: "At least one field must be provided",
-  })
-  .refine(salaryRangeValid, SALARY_RANGE_ERROR);
+  const create = base.strict().refine(salaryRangeValid, SALARY_RANGE_ERROR);
+  const update = base
+    .partial()
+    .strict()
+    .refine((data) => Object.keys(data).length > 0, {
+      message: "At least one field must be provided",
+    })
+    .refine(salaryRangeValid, SALARY_RANGE_ERROR);
+
+  return { create, update };
+}
 
 export const SORT_FIELDS = [
   "dateApplied",
@@ -58,16 +67,18 @@ export const SORT_FIELDS = [
   "updatedAt",
 ] as const;
 
-export const listQuerySchema = z.object({
-  search: z.string().trim().min(1).optional(),
-  status: z.enum(STATUSES).optional(),
-  platform: z.enum(PLATFORMS).optional(),
-  workMode: z.enum(WORK_MODES).optional(),
-  roleType: z.enum(ROLE_TYPES).optional(),
-  sortBy: z.enum(SORT_FIELDS).default("updatedAt"),
-  sortDir: z.enum(["asc", "desc"]).default("desc"),
-});
+export function buildListQuerySchema(v: LookupValues) {
+  return z.object({
+    search: z.string().trim().min(1).optional(),
+    status: oneOf(v.status, "status").optional(),
+    platform: oneOf(v.platform, "platform").optional(),
+    workMode: oneOf(v.workMode, "workMode").optional(),
+    roleType: oneOf(v.roleType, "roleType").optional(),
+    sortBy: z.enum(SORT_FIELDS).default("updatedAt"),
+    sortDir: z.enum(["asc", "desc"]).default("desc"),
+  });
+}
 
-export type ApplicationCreateInput = z.infer<typeof applicationCreateSchema>;
-export type ApplicationUpdateInput = z.infer<typeof applicationUpdateSchema>;
-export type ListQuery = z.infer<typeof listQuerySchema>;
+export type ApplicationPayloadInput = z.infer<
+  ReturnType<typeof buildApplicationSchemas>["create"]
+>;

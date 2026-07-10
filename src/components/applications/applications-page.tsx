@@ -8,8 +8,16 @@ import type {
   ApplicationPayload,
   ApplicationRow,
 } from "@/lib/types";
-import { Download, Upload } from "lucide-react";
+import { ChevronLeft, ChevronRight, Download, Upload } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { useRevalidateOnFocus } from "@/lib/use-revalidate";
 import { Toolbar, EMPTY_FILTERS, type Filters } from "./toolbar";
 import { ApplicationsTable, TableSkeleton } from "./applications-table";
 import { DetailDrawer } from "./detail-drawer";
@@ -36,16 +44,108 @@ async function readError(
   }
 }
 
+// Page-size choices. "all" removes the limit (handy for small pipelines / export
+// prep); the default keeps the table snappy as the pipeline grows.
+const PAGE_SIZES = [25, 50, 100, "all"] as const;
+type PageSize = (typeof PAGE_SIZES)[number];
+const DEFAULT_PAGE_SIZE: PageSize = 50;
+
+function PaginationBar({
+  page,
+  pageSize,
+  total,
+  shown,
+  onPageChange,
+  onPageSizeChange,
+}: {
+  page: number;
+  pageSize: PageSize;
+  total: number;
+  shown: number;
+  onPageChange: (page: number) => void;
+  onPageSizeChange: (size: PageSize) => void;
+}) {
+  const allMode = pageSize === "all";
+  const from = total === 0 ? 0 : allMode ? 1 : page * pageSize + 1;
+  const to = allMode ? total : page * pageSize + shown;
+  const pageCount = allMode ? 1 : Math.max(1, Math.ceil(total / pageSize));
+  const canPrev = !allMode && page > 0;
+  const canNext = !allMode && page < pageCount - 1;
+
+  return (
+    <div className="mt-4 flex flex-wrap items-center justify-between gap-3 text-sm">
+      <div className="flex items-center gap-2 text-muted-foreground">
+        <span className="tabular-nums">
+          {from}–{to} of {total}
+        </span>
+        <span className="hidden text-border sm:inline">·</span>
+        <div className="hidden items-center gap-1.5 sm:flex">
+          <span>Show</span>
+          <Select
+            value={String(pageSize)}
+            onValueChange={(v) =>
+              onPageSizeChange(v === "all" ? "all" : (Number(v) as PageSize))
+            }
+          >
+            <SelectTrigger className="h-8 w-[76px] rounded-lg text-xs">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {PAGE_SIZES.map((size) => (
+                <SelectItem key={String(size)} value={String(size)}>
+                  {size === "all" ? "All" : size}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <span>per page</span>
+        </div>
+      </div>
+
+      {!allMode && pageCount > 1 && (
+        <div className="flex items-center gap-2">
+          <Button
+            variant="outline"
+            size="sm"
+            className="gap-1 rounded-lg"
+            disabled={!canPrev}
+            onClick={() => onPageChange(page - 1)}
+          >
+            <ChevronLeft className="h-4 w-4" />
+            Prev
+          </Button>
+          <span className="text-xs tabular-nums text-muted-foreground">
+            Page {page + 1} / {pageCount}
+          </span>
+          <Button
+            variant="outline"
+            size="sm"
+            className="gap-1 rounded-lg"
+            disabled={!canNext}
+            onClick={() => onPageChange(page + 1)}
+          >
+            Next
+            <ChevronRight className="h-4 w-4" />
+          </Button>
+        </div>
+      )}
+    </div>
+  );
+}
+
 export function ApplicationsPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
 
   const [apps, setApps] = useState<ApplicationRow[] | null>(null);
+  const [total, setTotal] = useState(0);
   const [search, setSearch] = useState("");
   const [debouncedSearch, setDebouncedSearch] = useState("");
   const [filters, setFilters] = useState<Filters>(EMPTY_FILTERS);
   const [sortBy, setSortBy] = useState("updatedAt");
   const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
+  const [pageSize, setPageSize] = useState<PageSize>(DEFAULT_PAGE_SIZE);
+  const [page, setPage] = useState(0); // zero-based
 
   const [formOpen, setFormOpen] = useState(false);
   const [editing, setEditing] = useState<ApplicationRow | null>(null);
@@ -64,6 +164,11 @@ export function ApplicationsPage() {
     return () => clearTimeout(t);
   }, [search]);
 
+  // Filter/sort/page-size changes reset back to the first page.
+  useEffect(() => {
+    setPage(0);
+  }, [debouncedSearch, filters, sortBy, sortDir, pageSize]);
+
   const query = useMemo(() => {
     const params = new URLSearchParams();
     if (debouncedSearch.trim()) params.set("search", debouncedSearch.trim());
@@ -72,17 +177,27 @@ export function ApplicationsPage() {
     }
     params.set("sortBy", sortBy);
     params.set("sortDir", sortDir);
+    if (pageSize !== "all") {
+      params.set("limit", String(pageSize));
+      params.set("offset", String(page * pageSize));
+    }
     return params.toString();
-  }, [debouncedSearch, filters, sortBy, sortDir]);
+  }, [debouncedSearch, filters, sortBy, sortDir, pageSize, page]);
 
   const fetchSeq = useRef(0);
   const fetchList = useCallback(async () => {
     const seq = ++fetchSeq.current;
     try {
-      const res = await fetch(`/api/applications?${query}`);
+      const res = await fetch(`/api/applications?${query}`, {
+        cache: "no-store",
+      });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const data: ApplicationRow[] = await res.json();
-      if (seq === fetchSeq.current) setApps(data);
+      const count = Number(res.headers.get("X-Total-Count") ?? data.length);
+      if (seq === fetchSeq.current) {
+        setApps(data);
+        setTotal(count);
+      }
     } catch {
       if (seq === fetchSeq.current) {
         setApps((prev) => prev ?? []);
@@ -94,6 +209,26 @@ export function ApplicationsPage() {
   useEffect(() => {
     fetchList();
   }, [fetchList]);
+
+  // Re-fetch the detail of the currently open drawer (after a doc change / return).
+  const refreshOpenDetail = useCallback(() => {
+    const id = selected?.id;
+    if (!id || !drawerOpen) return;
+    fetch(`/api/applications/${id}`, { cache: "no-store" })
+      .then((res) => (res.ok ? res.json() : Promise.reject()))
+      .then((data: ApplicationDetail) => {
+        setSelected(data);
+        setSelectedDetail(data);
+      })
+      .catch(() => {});
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selected?.id, drawerOpen]);
+
+  // Returning to the list (back-nav, tab refocus, cross-tab edits) → refresh.
+  useRevalidateOnFocus(() => {
+    fetchList();
+    refreshOpenDetail();
+  });
 
   // Navbar "+ Add Application" navigates to /?new=1
   useEffect(() => {
@@ -122,7 +257,7 @@ export function ApplicationsPage() {
     setSelected(app);
     setSelectedDetail(null);
     setDrawerOpen(true);
-    fetch(`/api/applications/${app.id}`)
+    fetch(`/api/applications/${app.id}`, { cache: "no-store" })
       .then((res) => (res.ok ? res.json() : Promise.reject()))
       .then((data: ApplicationDetail) => {
         setSelected(data);
@@ -164,7 +299,8 @@ export function ApplicationsPage() {
         }
         toast.success("Application updated");
         fetchList();
-        return { ok: true };
+        router.refresh(); // keep board & dashboard fresh on next navigation
+        return { ok: true, app: updated };
       }
 
       // Create — optimistic temp row
@@ -194,9 +330,10 @@ export function ApplicationsPage() {
       );
       toast.success("Application added");
       fetchList();
-      return { ok: true };
+      router.refresh(); // keep board & dashboard fresh on next navigation
+      return { ok: true, app: created };
     },
-    [apps, editing, fetchList, selected]
+    [apps, editing, fetchList, selected, router]
   );
 
   const handleDelete = useCallback(
@@ -220,8 +357,9 @@ export function ApplicationsPage() {
         return;
       }
       toast.success(`Deleted "${app.position}" at ${app.company}`);
+      router.refresh(); // keep board & dashboard fresh on next navigation
     },
-    [apps, selected]
+    [apps, selected, router]
   );
 
   return (
@@ -232,7 +370,7 @@ export function ApplicationsPage() {
           <p className="mt-1 text-sm text-muted-foreground">
             {apps === null
               ? "Loading your pipeline…"
-              : `${apps.length} application${apps.length === 1 ? "" : "s"} in your pipeline`}
+              : `${total} application${total === 1 ? "" : "s"} in your pipeline`}
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -294,11 +432,23 @@ export function ApplicationsPage() {
         )}
       </section>
 
+      {apps !== null && apps.length > 0 && (
+        <PaginationBar
+          page={page}
+          pageSize={pageSize}
+          total={total}
+          shown={apps.length}
+          onPageChange={setPage}
+          onPageSizeChange={setPageSize}
+        />
+      )}
+
       <ApplicationForm
         open={formOpen}
         onOpenChange={setFormOpen}
         editing={editing}
         onSubmit={handleSubmit}
+        onDocumentsUploaded={fetchList}
       />
 
       <DetailDrawer
@@ -317,6 +467,11 @@ export function ApplicationsPage() {
           openEdit(app);
         }}
         onDelete={(app) => setDeleteTarget(app)}
+        onDocumentsChanged={() => {
+          fetchList();
+          refreshOpenDetail();
+          router.refresh(); // keep board & dashboard fresh on next navigation
+        }}
       />
 
       <DeleteDialog

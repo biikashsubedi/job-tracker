@@ -32,6 +32,9 @@ export async function GET(_req: NextRequest, { params }: RouteContext) {
         "Content-Type": contentType,
         "Content-Length": String(data.length),
         "Content-Disposition": `attachment; filename="${asciiName}"; filename*=UTF-8''${encodeURIComponent(document.filename)}`,
+        // Stored files are immutable (a new upload creates a new id), so the
+        // browser can cache aggressively — reopening the viewer is instant.
+        "Cache-Control": "private, max-age=31536000, immutable",
       },
     });
   } catch (error) {

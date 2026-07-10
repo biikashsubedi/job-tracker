@@ -1,3 +1,11 @@
+/** Lightweight document info attached to list rows (active Resume / Cover Letter). */
+export interface DocumentSummary {
+  id: string;
+  kind: string;
+  filename: string;
+  isActive?: boolean;
+}
+
 export interface ApplicationRow {
   id: string;
   position: string;
@@ -17,6 +25,8 @@ export interface ApplicationRow {
   jobUrl: string | null;
   createdAt: string;
   updatedAt: string;
+  /** active Resume / Cover Letter summaries for the table indicator chips */
+  documents?: DocumentSummary[];
 }
 
 export interface DocumentDTO {
@@ -24,6 +34,7 @@ export interface DocumentDTO {
   filename: string;
   storedPath: string;
   kind: string;
+  isActive: boolean;
   uploadedAt: string;
   applicationId: string;
 }

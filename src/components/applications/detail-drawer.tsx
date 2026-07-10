@@ -23,9 +23,10 @@ import {
   StatusPill,
   TechStackChips,
   WorkModeBadge,
-  statusColor,
 } from "./badges";
 import { DocumentsSection } from "./documents-section";
+import { ViewFilesButton } from "@/components/viewer/view-files-button";
+import { useLookups } from "@/components/lookups/lookup-provider";
 import { cn } from "@/lib/utils";
 
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
@@ -40,6 +41,7 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
 }
 
 function Timeline({ detail }: { detail: ApplicationDetail }) {
+  const { colorFor } = useLookups();
   const events = [...detail.statusHistory].reverse(); // newest first
   if (events.length === 0) {
     return <p className="text-sm text-muted-foreground">No history yet.</p>;
@@ -51,7 +53,7 @@ function Timeline({ detail }: { detail: ApplicationDetail }) {
           <span
             className={cn(
               "absolute -left-[26px] top-1 h-2.5 w-2.5 rounded-full ring-4 ring-card",
-              statusColor(event.toStatus).dot
+              colorFor("STATUS", event.toStatus).dot
             )}
           />
           <div className="text-sm font-medium leading-tight">
@@ -78,6 +80,8 @@ interface DetailDrawerProps {
   detail: ApplicationDetail | null; // full record once loaded
   onEdit?: (app: ApplicationRow) => void;
   onDelete?: (app: ApplicationRow) => void;
+  /** fired after a document upload/delete so the list/chips can refresh */
+  onDocumentsChanged?: () => void;
 }
 
 export function DetailDrawer({
@@ -87,6 +91,7 @@ export function DetailDrawer({
   detail,
   onEdit,
   onDelete,
+  onDocumentsChanged,
 }: DetailDrawerProps) {
   if (!app) return null;
   const dlState = deadlineState(app.deadline);
@@ -108,6 +113,7 @@ export function DetailDrawer({
             <WorkModeBadge mode={app.workMode} />
             <PlatformBadge platform={app.platform} />
           </div>
+          <ViewFilesButton app={app} variant="full" className="w-full" />
         </SheetHeader>
 
         <div className="flex-1 space-y-6 px-6 py-6">
@@ -194,6 +200,7 @@ export function DetailDrawer({
             <DocumentsSection
               applicationId={app.id}
               documents={detail?.documents ?? null}
+              onChanged={onDocumentsChanged}
             />
           </Field>
 

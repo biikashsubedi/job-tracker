@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { jsonError, parseJsonBody } from "@/lib/api";
-import { applicationCreateSchema } from "@/lib/validation";
+import { getLookupValues } from "@/lib/lookups";
+import { buildApplicationSchemas } from "@/lib/validation";
 
 const MAX_IMPORT_ROWS = 1000;
 
@@ -18,11 +19,12 @@ export async function POST(req: NextRequest) {
     return jsonError(`Too many rows — the limit is ${MAX_IMPORT_ROWS}`, 400);
   }
 
-  const valid: Array<ReturnType<typeof applicationCreateSchema.parse>> = [];
+  const { create } = buildApplicationSchemas(await getLookupValues());
+  const valid: Array<ReturnType<typeof create.parse>> = [];
   const rejected: Array<{ index: number; error: string }> = [];
 
   rows.forEach((row, i) => {
-    const parsed = applicationCreateSchema.safeParse(row);
+    const parsed = create.safeParse(row);
     if (parsed.success) valid.push(parsed.data);
     else {
       const issue = parsed.error.issues[0];

@@ -1,6 +1,10 @@
 import type { Metadata, Viewport } from "next";
 import { Inter } from "next/font/google";
 import { Toaster } from "sonner";
+import { auth } from "@/auth";
+import { getAllLookups } from "@/lib/lookups";
+import { EMPTY_LOOKUPS } from "@/lib/lookup-colors";
+import { LookupProvider } from "@/components/lookups/lookup-provider";
 import { Navbar } from "@/components/navbar";
 import { KeyboardShortcuts } from "@/components/keyboard-shortcuts";
 import { themeInitScript } from "@/components/theme-toggle";
@@ -65,28 +69,39 @@ export const viewport: Viewport = {
   ],
 };
 
-export default function RootLayout({
+export default async function RootLayout({
   children,
 }: Readonly<{
   children: React.ReactNode;
 }>) {
+  const session = await auth();
+  const user = session?.user;
+  // Dropdown option values + colors now live in the DB; load once per request.
+  const lookups = user ? await getAllLookups() : EMPTY_LOOKUPS;
+
   return (
     <html lang="en" suppressHydrationWarning>
       <head>
         <script dangerouslySetInnerHTML={{ __html: themeInitScript }} />
       </head>
       <body className={`${inter.variable} flex min-h-screen flex-col font-sans`}>
-        <Navbar />
-        <main className="flex-1">{children}</main>
-        <footer className="border-t border-border/60 py-6">
-          <div className="mx-auto max-w-7xl px-4 text-center text-xs text-muted-foreground sm:px-6">
-            <p>
-              © {new Date().getFullYear()} {SITE.name} · Built by {SITE.author}
-            </p>
-          </div>
-        </footer>
+        <LookupProvider value={lookups}>
+          {/* App chrome only renders for authenticated users (never on /login). */}
+          {user && <Navbar user={user} />}
+          <main className="flex-1">{children}</main>
+          {user && (
+            <footer className="border-t border-border/60 py-6">
+              <div className="mx-auto max-w-7xl px-4 text-center text-xs text-muted-foreground sm:px-6">
+                <p>
+                  © {new Date().getFullYear()} {SITE.name} · Built by{" "}
+                  {SITE.author}
+                </p>
+              </div>
+            </footer>
+          )}
+          {user && <KeyboardShortcuts />}
+        </LookupProvider>
         <Toaster richColors position="bottom-right" />
-        <KeyboardShortcuts />
       </body>
     </html>
   );

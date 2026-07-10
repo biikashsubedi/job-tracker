@@ -1,14 +1,21 @@
-import { unlink } from "fs/promises";
+import { rm, unlink } from "fs/promises";
 import path from "path";
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { jsonError, parseJsonBody, validationError } from "@/lib/api";
-import { applicationUpdateSchema } from "@/lib/validation";
+import { getLookupValues } from "@/lib/lookups";
+import { buildApplicationSchemas } from "@/lib/validation";
 
 type RouteContext = { params: { id: string } };
 
 const fullInclude = {
-  documents: { orderBy: { uploadedAt: "asc" as const } },
+  // active first, then most-recently superseded
+  documents: {
+    orderBy: [
+      { isActive: "desc" as const },
+      { uploadedAt: "desc" as const },
+    ],
+  },
   statusHistory: { orderBy: { changedAt: "asc" as const } },
 };
 
@@ -30,7 +37,8 @@ export async function PATCH(req: NextRequest, { params }: RouteContext) {
   const body = await parseJsonBody(req);
   if (body === null) return jsonError("Request body must be valid JSON", 400);
 
-  const parsed = applicationUpdateSchema.safeParse(body);
+  const { update } = buildApplicationSchemas(await getLookupValues());
+  const parsed = update.safeParse(body);
   if (!parsed.success) return validationError(parsed.error);
 
   try {
@@ -90,6 +98,12 @@ export async function DELETE(_req: NextRequest, { params }: RouteContext) {
         }
       }
     }
+
+    // remove the now-empty per-application upload directory
+    await rm(path.resolve(process.cwd(), "uploads", params.id), {
+      recursive: true,
+      force: true,
+    }).catch(() => {});
 
     return NextResponse.json({ deleted: params.id, deletedFiles });
   } catch (error) {

@@ -35,9 +35,37 @@ model Document {
   filename      String
   storedPath    String
   kind          String      // Resume | Cover Letter | Job Description | Other
+  isActive      Boolean     @default(true) // false = superseded by a newer version
   uploadedAt    DateTime    @default(now())
   application   Application @relation(fields: [applicationId], references: [id], onDelete: Cascade)
   applicationId String
+
+  @@index([applicationId, kind, isActive])
+}
+
+model LookupOption {
+  id        String    @id @default(cuid())
+  type      String // STATUS | PLATFORM | WORK_MODE | ROLE_TYPE | INTERVIEW_ROUND
+  label     String
+  color     String // blue|amber|purple|green|slate|red|emerald|sky|orange|pink|indigo|teal|gray
+  group     String? // STATUS only: Applied | Interviewing | Assessment | Offer | Closed
+  sortOrder Int
+  isActive  Boolean   @default(true)
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+
+  @@unique([type, label])
+}
+
+model User {
+  id           String    @id @default(cuid())
+  email        String    @unique
+  name         String?
+  passwordHash String
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+  failedLogins Int       @default(0)
+  lockedUntil  DateTime?
 }
 
 model StatusEvent {

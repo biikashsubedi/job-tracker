@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   Area,
   AreaChart,
@@ -38,9 +38,12 @@ import {
   weeklySeries,
   type ChartSlice,
 } from "@/lib/dashboard";
+import { workModeShare } from "@/lib/dashboard";
+import { buildStatusGroups } from "@/lib/status-groups";
+import { useRevalidateOnFocus } from "@/lib/use-revalidate";
 import { daysUntil, formatDateShort } from "@/lib/format";
 import { DetailDrawer } from "../applications/detail-drawer";
-import { workModeShare } from "@/lib/dashboard";
+import { useLookups } from "@/components/lookups/lookup-provider";
 import { cn } from "@/lib/utils";
 
 const TOOLTIP_STYLE = {
@@ -229,27 +232,85 @@ function DashboardSkeleton() {
 }
 
 export function DashboardPage() {
+  const { options, colorFor } = useLookups();
+  const groups = useMemo(() => buildStatusGroups(options.STATUS), [options]);
+
   const [apps, setApps] = useState<ApplicationRow[] | null>(null);
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [selected, setSelected] = useState<ApplicationRow | null>(null);
   const [selectedDetail, setSelectedDetail] =
     useState<ApplicationDetail | null>(null);
 
-  useEffect(() => {
-    fetch("/api/applications")
+  const loadApps = useCallback(() => {
+    fetch("/api/applications", { cache: "no-store" })
       .then((res) => (res.ok ? res.json() : Promise.reject()))
       .then(setApps)
       .catch(() => {
-        setApps([]);
+        setApps((prev) => prev ?? []);
         toast.error("Failed to load applications");
       });
   }, []);
 
-  const stats = useMemo(() => (apps ? computeStats(apps) : null), [apps]);
-  const byStatus = useMemo(() => (apps ? statusBreakdown(apps) : []), [apps]);
-  const byPlatform = useMemo(() => (apps ? platformShare(apps) : []), [apps]);
-  const byWorkMode = useMemo(() => (apps ? workModeShare(apps) : []), [apps]);
-  const byRoleType = useMemo(() => (apps ? roleTypeShare(apps) : []), [apps]);
+  const refreshOpenDetail = useCallback(() => {
+    const id = selected?.id;
+    if (!id || !drawerOpen) return;
+    fetch(`/api/applications/${id}`, { cache: "no-store" })
+      .then((res) => (res.ok ? res.json() : Promise.reject()))
+      .then((data: ApplicationDetail) => {
+        setSelected(data);
+        setSelectedDetail(data);
+      })
+      .catch(() => {});
+  }, [selected?.id, drawerOpen]);
+
+  useEffect(() => {
+    loadApps();
+  }, [loadApps]);
+
+  // Refresh when returning to the dashboard (back-nav, tab refocus, cross-tab).
+  useRevalidateOnFocus(() => {
+    loadApps();
+    refreshOpenDetail();
+  });
+
+  const labelsOf = (type: Parameters<typeof colorFor>[0]) =>
+    options[type].map((o) => o.label);
+  const hexOf = (type: Parameters<typeof colorFor>[0]) => (label: string) =>
+    colorFor(type, label).hex;
+
+  const stats = useMemo(
+    () => (apps ? computeStats(apps, groups) : null),
+    [apps, groups]
+  );
+  const byStatus = useMemo(
+    () =>
+      apps
+        ? statusBreakdown(apps, labelsOf("STATUS"), hexOf("STATUS"))
+        : [],
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [apps, options]
+  );
+  const byPlatform = useMemo(
+    () =>
+      apps
+        ? platformShare(apps, labelsOf("PLATFORM"), hexOf("PLATFORM"))
+        : [],
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [apps, options]
+  );
+  const byWorkMode = useMemo(
+    () =>
+      apps
+        ? workModeShare(apps, labelsOf("WORK_MODE"), hexOf("WORK_MODE"))
+        : [],
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [apps, options]
+  );
+  const byRoleType = useMemo(
+    () => (apps ? roleTypeShare(apps, labelsOf("ROLE_TYPE")) : []),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [apps, options]
+  );
   const overTime = useMemo(() => (apps ? weeklySeries(apps) : []), [apps]);
   const deadlines = useMemo(
     () => (apps ? upcomingDeadlines(apps) : []),
@@ -260,7 +321,7 @@ export function DashboardPage() {
     setSelected(app);
     setSelectedDetail(null);
     setDrawerOpen(true);
-    fetch(`/api/applications/${app.id}`)
+    fetch(`/api/applications/${app.id}`, { cache: "no-store" })
       .then((res) => (res.ok ? res.json() : Promise.reject()))
       .then((data: ApplicationDetail) => {
         setSelected(data);
@@ -579,6 +640,10 @@ export function DashboardPage() {
         }}
         app={selected}
         detail={selectedDetail}
+        onDocumentsChanged={() => {
+          loadApps();
+          refreshOpenDetail();
+        }}
       />
     </div>
   );

@@ -6,11 +6,13 @@ import { Skeleton } from "@/components/ui/skeleton";
 import type { ApplicationRow } from "@/lib/types";
 import { deadlineState, formatDate, formatSalaryRange } from "@/lib/format";
 import {
+  DocIndicatorChips,
   PlatformBadge,
   SkillMatchBar,
   StatusPill,
   WorkModeBadge,
 } from "./badges";
+import { ViewFilesButton } from "@/components/viewer/view-files-button";
 import { cn } from "@/lib/utils";
 
 function DeadlineCell({ deadline }: { deadline: string | null }) {
@@ -54,6 +56,7 @@ function RowActions({
           "md:opacity-0 md:transition-opacity md:group-hover:opacity-100 md:group-focus-within:opacity-100"
       )}
     >
+      <ViewFilesButton app={app} />
       <Button
         variant="ghost"
         size="icon"
@@ -91,6 +94,7 @@ const HEADERS = [
   { label: "Salary", className: "hidden xl:table-cell" },
   { label: "Applied", className: "hidden xl:table-cell" },
   { label: "Deadline", className: "hidden md:table-cell" },
+  { label: "Docs", className: "" },
   { label: "", className: "w-20" },
 ];
 
@@ -158,6 +162,9 @@ export function ApplicationsTable({
                   <DeadlineCell deadline={app.deadline} />
                 </td>
                 <td className="px-4 py-3">
+                  <DocIndicatorChips documents={app.documents} />
+                </td>
+                <td className="px-4 py-3">
                   <RowActions app={app} onEdit={onEdit} onDelete={onDelete} />
                 </td>
               </tr>
@@ -199,6 +206,7 @@ export function ApplicationsTable({
                 {formatSalaryRange(app.salaryMin, app.salaryMax)}
               </span>
               <DeadlineCell deadline={app.deadline} />
+              <DocIndicatorChips documents={app.documents} />
             </div>
           </div>
         ))}
